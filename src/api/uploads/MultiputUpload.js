@@ -21,7 +21,6 @@ import MultiputPart, {
     PART_STATE_UPLOADED,
     PART_STATE_UPLOADING,
     PART_STATE_DIGEST_READY,
-    PART_STATE_COMPUTING_DIGEST,
     PART_STATE_NOT_STARTED,
 } from './MultiputPart';
 import BaseMultiput from './BaseMultiput';
@@ -128,6 +127,7 @@ class MultiputUpload extends BaseMultiput {
         this.commitRetryCount = 0;
         this.clientId = null;
         this.isResumableUploadsEnabled = false;
+        this.numResumeRetries = 0;
     }
 
     /**
@@ -146,6 +146,7 @@ class MultiputUpload extends BaseMultiput {
         this.createSessionNumRetriesPerformed = 0;
         this.partSize = 0;
         this.commitRetryCount = 0;
+        this.numResumeRetries = 0;
     }
 
     /**
@@ -486,7 +487,7 @@ class MultiputUpload extends BaseMultiput {
 
         // Reset uploading process for parts that were in progress when the upload failed
         let nextUploadIndex = this.firstUnuploadedPartIndex;
-        while (this.numPartsUploading > 0 || this.numPartsDigestComputing > 0) {
+        while (this.numPartsUploading > 0) {
             const part = this.parts[nextUploadIndex];
             if (part && part.state === PART_STATE_UPLOADING) {
                 part.state = PART_STATE_DIGEST_READY;
@@ -496,13 +497,6 @@ class MultiputUpload extends BaseMultiput {
 
                 this.numPartsUploading -= 1;
                 this.numPartsDigestReady += 1;
-            } else if (part && part.state === PART_STATE_COMPUTING_DIGEST) {
-                part.state = PART_STATE_NOT_STARTED;
-                part.numDigestRetriesPerformed = 0;
-                part.timing = {};
-
-                this.numPartsDigestComputing -= 1;
-                this.numPartsNotStarted += 1;
             }
             nextUploadIndex += 1;
         }
@@ -541,11 +535,8 @@ class MultiputUpload extends BaseMultiput {
             }
             this.retryTimeout = setTimeout(this.getSessionInfo, retryAfterMs);
             this.numResumeRetries += 1;
-        } else if (errorData && errorData.status >= 500) {
-            this.retryTimeout = setTimeout(this.getSessionInfo, 2 ** this.numResumeRetries * MS_IN_S);
-            this.numResumeRetries += 1;
-        } else {
-            // Restart upload process for errors resulting from invalid session
+        } else if (errorData && errorData.status >= 400 && errorData.status < 500) {
+            // Restart upload process for errors resulting from invalid/expired session or no permission
             this.parts.forEach(part => {
                 part.cancel();
             });
@@ -566,6 +557,11 @@ class MultiputUpload extends BaseMultiput {
                 fileId: this.fileId,
             };
             this.upload(uploadOptions);
+        } else {
+            // Handle internet disconnects (error.request && !error.response) and (!error.request)
+            // Also handle any 500 error messages
+            this.retryTimeout = setTimeout(this.getSessionInfo, 2 ** this.numResumeRetries * MS_IN_S);
+            this.numResumeRetries += 1;
         }
     }
 
