@@ -8,6 +8,7 @@ import React from 'react';
 import Modal from 'react-modal';
 import noop from 'lodash/noop';
 import { injectIntl, FormattedMessage } from 'react-intl';
+import type { InjectIntlProvidedProps } from 'react-intl';
 import PrimaryButton from '../../components/primary-button/PrimaryButton';
 import Button from '../../components/button/Button';
 import messages from '../common/messages';
@@ -68,20 +69,20 @@ const ShareDialog = ({
             <div className="be-modal-content">
                 <label>
                     <FormattedMessage tagName="div" {...messages.shareDialogText} />
-                    <span>
-                        <input
-                            ref={input => {
-                                textInput = input;
-                            }}
-                            onChange={noop}
-                            type="text"
-                            value={url}
-                        />
-                        <PrimaryButton autoFocus className="be-modal-button-copy" onClick={copy} type="button">
-                            <FormattedMessage {...messages.copy} />
-                        </PrimaryButton>
-                    </span>
                 </label>
+                <div className="be-modal-input-group">
+                    <input
+                        ref={input => {
+                            textInput = input;
+                        }}
+                        onChange={noop}
+                        type="text"
+                        value={url}
+                    />
+                    <PrimaryButton autoFocus className="be-modal-button-copy" onClick={copy} type="button">
+                        <FormattedMessage {...messages.copy} />
+                    </PrimaryButton>
+                </div>
             </div>
             <div className="be-modal-btns">
                 <ShareAccessSelect

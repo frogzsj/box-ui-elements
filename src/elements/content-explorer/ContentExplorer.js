@@ -10,13 +10,13 @@ import classNames from 'classnames';
 import cloneDeep from 'lodash/cloneDeep';
 import debounce from 'lodash/debounce';
 import flow from 'lodash/flow';
-import noop from 'lodash/noop';
 import getProp from 'lodash/get';
+import noop from 'lodash/noop';
 import uniqueid from 'lodash/uniqueId';
 import CreateFolderDialog from '../common/create-folder-dialog';
 import UploadDialog from '../common/upload-dialog';
 import Header from '../common/header';
-import Pagination from '../common/pagination';
+import Pagination from '../../features/pagination';
 import SubHeader from '../common/sub-header/SubHeader';
 import makeResponsive from '../common/makeResponsive';
 import openUrlInsideIframe from '../../utils/iframe';
@@ -29,6 +29,7 @@ import ShareDialog from './ShareDialog';
 import RenameDialog from './RenameDialog';
 import DeleteConfirmationDialog from './DeleteConfirmationDialog';
 import Content from './Content';
+import isThumbnailReady from './utils';
 import { isFocusableElement, isInputElement, focus } from '../../utils/dom';
 import { FILE_SHARED_LINK_FIELDS_TO_FETCH, FOLDER_FIELDS_TO_FETCH } from '../../utils/fields';
 import LocalStore from '../../utils/LocalStore';
@@ -62,7 +63,7 @@ import {
     TYPED_ID_FOLDER_PREFIX,
 } from '../../constants';
 import type { ViewMode } from '../common/flowTypes';
-import type { MetadataQuery, MetadataColumnsToShow } from '../../common/types/metadataQueries';
+import type { MetadataQuery, FieldsToShow } from '../../common/types/metadataQueries';
 import type { MetadataFieldValue } from '../../common/types/metadata';
 import type {
     View,
@@ -99,9 +100,11 @@ type Props = {
     canUpload: boolean,
     className: string,
     contentPreviewProps: ContentPreviewProps,
+    contentUploaderProps: ContentUploaderProps,
     currentFolderId?: string,
     defaultView: DefaultView,
     features: FeatureConfig,
+    fieldsToShow?: FieldsToShow,
     initialPage: number,
     initialPageSize: number,
     isLarge: boolean,
@@ -113,8 +116,7 @@ type Props = {
     logoUrl?: string,
     measureRef?: Function,
     messages?: StringMap,
-    metadataColumnsToShow: MetadataColumnsToShow,
-    metadataQuery: MetadataQuery,
+    metadataQuery?: MetadataQuery,
     onCreate: Function,
     onDelete: Function,
     onDownload: Function,
@@ -123,6 +125,7 @@ type Props = {
     onRename: Function,
     onSelect: Function,
     onUpload: Function,
+    previewLibraryVersion: string,
     requestInterceptor?: Function,
     responseInterceptor?: Function,
     rootFolderId: string,
@@ -131,6 +134,7 @@ type Props = {
     sortBy: SortBy,
     sortDirection: SortDirection,
     staticHost: string,
+    staticPath: string,
     token: Token,
     uploadHost: string,
 };
@@ -138,6 +142,7 @@ type Props = {
 type State = {
     currentCollection: Collection,
     currentOffset: number,
+    currentPageNumber: number,
     currentPageSize: number,
     errorCode: string,
     focusedRow: number,
@@ -149,6 +154,7 @@ type State = {
     isRenameModalOpen: boolean,
     isShareModalOpen: boolean,
     isUploadModalOpen: boolean,
+    markers: Array<?string>,
     rootName: string,
     searchQuery: string,
     selected?: BoxItem,
@@ -214,6 +220,7 @@ class ContentExplorer extends Component<Props, State> {
         contentPreviewProps: {
             contentSidebarProps: {},
         },
+        contentUploaderProps: {},
     };
 
     /**
@@ -260,6 +267,7 @@ class ContentExplorer extends Component<Props, State> {
             currentCollection: {},
             currentOffset: initialPageSize * (initialPage - 1),
             currentPageSize: initialPageSize,
+            currentPageNumber: 0,
             errorCode: '',
             focusedRow: 0,
             gridColumnCount: 4,
@@ -270,6 +278,7 @@ class ContentExplorer extends Component<Props, State> {
             isRenameModalOpen: false,
             isShareModalOpen: false,
             isUploadModalOpen: false,
+            markers: [],
             rootName: '',
             searchQuery: '',
             sortBy,
@@ -354,13 +363,19 @@ class ContentExplorer extends Component<Props, State> {
      * @return {void}
      */
     showMetadataQueryResultsSuccessCallback = (metadataQueryCollection: Collection): void => {
-        const { currentCollection }: State = this.state;
+        const { nextMarker } = metadataQueryCollection;
+        const { currentCollection, currentPageNumber, markers }: State = this.state;
+        const cloneMarkers = [...markers];
+        if (nextMarker) {
+            cloneMarkers[currentPageNumber + 1] = nextMarker;
+        }
         this.setState({
             currentCollection: {
                 ...currentCollection,
                 ...metadataQueryCollection,
                 percentLoaded: 100,
             },
+            markers: cloneMarkers,
         });
     };
 
@@ -371,7 +386,24 @@ class ContentExplorer extends Component<Props, State> {
      * @return {void}
      */
     showMetadataQueryResults() {
-        const { metadataQuery }: Props = this.props;
+        const { metadataQuery = {} }: Props = this.props;
+        const { currentPageNumber, markers }: State = this.state;
+        const metadataQueryClone = cloneDeep(metadataQuery);
+
+        if (currentPageNumber === 0) {
+            // Preserve the marker as part of the original query
+            markers[currentPageNumber] = metadataQueryClone.marker;
+        }
+
+        if (typeof markers[currentPageNumber] === 'string') {
+            // Set marker to the query to get next set of results
+            metadataQueryClone.marker = markers[currentPageNumber];
+        }
+
+        if (typeof metadataQueryClone.limit !== 'number') {
+            // Set limit to the query for pagination support
+            metadataQueryClone.limit = DEFAULT_PAGE_SIZE;
+        }
         // Reset search state, the view and show busy indicator
         this.setState({
             searchQuery: '',
@@ -380,7 +412,7 @@ class ContentExplorer extends Component<Props, State> {
         });
         this.metadataQueryAPIHelper = new MetadataQueryAPIHelper(this.api);
         this.metadataQueryAPIHelper.fetchMetadataQueryResults(
-            metadataQuery,
+            metadataQueryClone,
             this.showMetadataQueryResultsSuccessCallback,
             this.errorCallback,
         );
@@ -461,6 +493,8 @@ class ContentExplorer extends Component<Props, State> {
             this.showRecents(false);
         } else if (view === VIEW_SEARCH && searchQuery) {
             this.search(searchQuery);
+        } else if (view === VIEW_METADATA) {
+            this.showMetadataQueryResults();
         } else {
             throw new Error('Cannot refresh incompatible view!');
         }
@@ -815,17 +849,28 @@ class ContentExplorer extends Component<Props, State> {
         const fileAPI = this.api.getFileAPI(false);
         const newCollection: Collection = { ...collection };
         const selectedId = selectedItem ? selectedItem.id : null;
-        const thumbnails = await Promise.all(items.map(item => fileAPI.getThumbnailUrl(item)));
         let newSelectedItem: ?BoxItem;
 
-        newCollection.items = items.map((obj, index) => {
-            const isSelected = obj.id === selectedId;
-            const currentItem = isSelected ? selectedItem : obj;
+        const itemThumbnails = await Promise.all(
+            items.map(item => {
+                return item.type === TYPE_FILE ? fileAPI.getThumbnailUrl(item) : null;
+            }),
+        );
+
+        newCollection.items = items.map((item, index) => {
+            const isSelected = item.id === selectedId;
+            const currentItem = isSelected ? selectedItem : item;
+            const thumbnailUrl = itemThumbnails[index];
+
             const newItem = {
                 ...currentItem,
                 selected: isSelected,
-                thumbnailUrl: thumbnails[index],
+                thumbnailUrl,
             };
+
+            if (item.type === TYPE_FILE && thumbnailUrl && !isThumbnailReady(newItem)) {
+                this.attemptThumbnailGeneration(newItem);
+            }
 
             // Only if selectedItem is in the current collection do we want to set selected state
             if (isSelected) {
@@ -836,6 +881,45 @@ class ContentExplorer extends Component<Props, State> {
         });
         this.setState({ currentCollection: newCollection, selected: newSelectedItem }, callback);
     }
+
+    /**
+     * Attempts to generate a thumbnail for the given item and assigns the
+     * item its thumbnail url if successful
+     *
+     * @param {BoxItem} item - item to generate thumbnail for
+     * @return {Promise<void>}
+     */
+    attemptThumbnailGeneration = async (item: BoxItem): Promise<void> => {
+        const entries = getProp(item, 'representations.entries');
+        const representation = getProp(entries, '[0]');
+
+        if (representation) {
+            const updatedRepresentation = await this.api.getFileAPI(false).generateRepresentation(representation);
+            if (updatedRepresentation !== representation) {
+                this.updateItemInCollection({
+                    ...cloneDeep(item),
+                    representations: {
+                        entries: [updatedRepresentation, ...entries.slice(1)],
+                    },
+                });
+            }
+        }
+    };
+
+    /**
+     * Update item in this.state.currentCollection
+     *
+     * @param {BoxItem} newItem - item with updated properties
+     * @return {void}
+     */
+    updateItemInCollection = (newItem: BoxItem): void => {
+        const { currentCollection } = this.state;
+        const { items = [] } = currentCollection;
+        const newCollection = { ...currentCollection };
+
+        newCollection.items = items.map(item => (item.id === newItem.id ? newItem : item));
+        this.setState({ currentCollection: newCollection });
+    };
 
     /**
      * Selects or unselects an item
@@ -1332,12 +1416,26 @@ class ContentExplorer extends Component<Props, State> {
     };
 
     /**
-     * Handle pagination changes
+     * Handle pagination changes for offset based pagination
      *
      * @param {number} newOffset - the new page offset value
      */
     paginate = (newOffset: number) => {
         this.setState({ currentOffset: newOffset }, this.refreshCollection);
+    };
+
+    /**
+     * Handle pagination changes for marker based pagination
+     * @param {number} newOffset - the new page offset value
+     */
+    markerBasedPaginate = (newOffset: number) => {
+        const { currentPageNumber } = this.state;
+        this.setState(
+            {
+                currentPageNumber: currentPageNumber + newOffset, // newOffset could be negative
+            },
+            this.refreshCollection,
+        );
     };
 
     /**
@@ -1397,13 +1495,13 @@ class ContentExplorer extends Component<Props, State> {
      * @param {MetadataFieldValue} oldValue - current value
      * @param {MetadataFieldValue} newVlaue - new value the field to be updated to
      */
+
     updateMetadata = (
         item: BoxItem,
         field: string,
         oldValue: ?MetadataFieldValue,
         newValue: ?MetadataFieldValue,
     ): void => {
-        this.setState({ isLoading: true });
         this.metadataQueryAPIHelper.updateMetadata(
             item,
             field,
@@ -1424,7 +1522,7 @@ class ContentExplorer extends Component<Props, State> {
             if (item.id === clonedItem.id) {
                 const fields = getProp(clonedItem, 'metadata.enterprise.fields', []);
                 fields.forEach(itemField => {
-                    if (itemField.name === field) {
+                    if (itemField.key.split('.').pop() === field) {
                         itemField.value = newValue; // set updated metadata value to correct item in currentCollection
                     }
                 });
@@ -1450,56 +1548,62 @@ class ContentExplorer extends Component<Props, State> {
      */
     render() {
         const {
-            language,
-            messages,
-            rootFolderId,
-            logoUrl,
-            canUpload,
-            canCreateNewFolder,
-            canSetShareAccess,
-            canDelete,
-            canRename,
-            canDownload,
-            canPreview,
-            canShare,
-            token,
-            sharedLink,
-            sharedLinkPassword,
             apiHost,
             appHost,
-            staticHost,
-            uploadHost,
-            isSmall,
-            isMedium,
-            isTouch,
+            canCreateNewFolder,
+            canDelete,
+            canDownload,
+            canPreview,
+            canRename,
+            canSetShareAccess,
+            canShare,
+            canUpload,
             className,
+            contentPreviewProps,
+            contentUploaderProps,
+            defaultView,
+            isMedium,
+            isSmall,
+            isTouch,
+            language,
+            logoUrl,
             measureRef,
-            onPreview,
+            messages,
+            fieldsToShow,
             onDownload,
+            onPreview,
             onUpload,
             requestInterceptor,
             responseInterceptor,
-            contentPreviewProps,
-            metadataColumnsToShow,
+            rootFolderId,
+            sharedLink,
+            sharedLinkPassword,
+            staticHost,
+            staticPath,
+            previewLibraryVersion,
+            token,
+            uploadHost,
         }: Props = this.props;
 
         const {
-            view,
-            rootName,
             currentCollection,
+            currentPageNumber,
             currentPageSize,
-            searchQuery,
+            errorCode,
+            focusedRow,
             gridColumnCount,
+            isCreateFolderModalOpen,
             isDeleteModalOpen,
+            isLoading,
+            isPreviewModalOpen,
             isRenameModalOpen,
             isShareModalOpen,
             isUploadModalOpen,
-            isPreviewModalOpen,
-            isCreateFolderModalOpen,
+            markers,
+            rootName,
+            searchQuery,
             selected,
-            isLoading,
-            errorCode,
-            focusedRow,
+            view,
         }: State = this.state;
 
         const { id, offset, permissions, totalCount }: Collection = currentCollection;
@@ -1507,10 +1611,14 @@ class ContentExplorer extends Component<Props, State> {
         const styleClassName = classNames('be bce', className);
         const allowUpload: boolean = canUpload && !!can_upload;
         const allowCreate: boolean = canCreateNewFolder && !!can_upload;
-        const hasHeader: boolean = view !== VIEW_METADATA; // Show Header and SubHeader when it's not metadata view
+        const isDefaultViewMetadata: boolean = defaultView === DEFAULT_VIEW_METADATA;
+        const isErrorView: boolean = view === VIEW_ERROR;
 
         const viewMode = this.getViewMode();
         const maxGridColumnCount = this.getMaxNumberOfGridViewColumnsForWidth();
+
+        const hasNextMarker: boolean = !!markers[currentPageNumber + 1];
+        const hasPreviousMarker: boolean = currentPageNumber === 1 || !!markers[currentPageNumber - 1];
 
         /* eslint-disable jsx-a11y/no-static-element-interactions */
         /* eslint-disable jsx-a11y/no-noninteractive-tabindex */
@@ -1518,7 +1626,7 @@ class ContentExplorer extends Component<Props, State> {
             <Internationalize language={language} messages={messages}>
                 <div id={this.id} className={styleClassName} ref={measureRef} data-testid="content-explorer">
                     <div className="be-app-element" onKeyDown={this.onKeyDown} tabIndex={0}>
-                        {hasHeader && (
+                        {!isDefaultViewMetadata && (
                             <>
                                 <Header
                                     view={view}
@@ -1562,7 +1670,7 @@ class ContentExplorer extends Component<Props, State> {
                             isMedium={isMedium}
                             isSmall={isSmall}
                             isTouch={isTouch}
-                            metadataColumnsToShow={metadataColumnsToShow}
+                            fieldsToShow={fieldsToShow}
                             onItemClick={this.onItemClick}
                             onItemDelete={this.delete}
                             onItemDownload={this.download}
@@ -1578,14 +1686,19 @@ class ContentExplorer extends Component<Props, State> {
                             view={view}
                             viewMode={viewMode}
                         />
-                        <Footer>
-                            <Pagination
-                                offset={offset}
-                                onChange={this.paginate}
-                                pageSize={currentPageSize}
-                                totalCount={totalCount}
-                            />
-                        </Footer>
+                        {!isErrorView && (
+                            <Footer>
+                                <Pagination
+                                    hasNextMarker={hasNextMarker}
+                                    hasPrevMarker={hasPreviousMarker}
+                                    offset={offset}
+                                    onOffsetChange={this.paginate}
+                                    pageSize={currentPageSize}
+                                    totalCount={totalCount}
+                                    onMarkerBasedPageChange={this.markerBasedPaginate}
+                                />
+                            </Footer>
+                        )}
                     </div>
                     {allowUpload && !!this.appElement ? (
                         <UploadDialog
@@ -1600,6 +1713,7 @@ class ContentExplorer extends Component<Props, State> {
                             parentElement={this.rootElement}
                             appElement={this.appElement}
                             onUpload={onUpload}
+                            contentUploaderProps={contentUploaderProps}
                             requestInterceptor={requestInterceptor}
                             responseInterceptor={responseInterceptor}
                         />
@@ -1667,6 +1781,8 @@ class ContentExplorer extends Component<Props, State> {
                             apiHost={apiHost}
                             appHost={appHost}
                             staticHost={staticHost}
+                            staticPath={staticPath}
+                            previewLibraryVersion={previewLibraryVersion}
                             sharedLink={sharedLink}
                             sharedLinkPassword={sharedLinkPassword}
                             contentPreviewProps={contentPreviewProps}

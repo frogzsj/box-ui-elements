@@ -13,6 +13,7 @@ type RowRendererParams = {
     columns: Array<any>,
     index: number,
     isScrolling: boolean,
+    key: string,
     onRowClick: ?MouseEvent,
     onRowDoubleClick: ?MouseEvent,
     onRowMouseOut: ?MouseEvent,
@@ -57,6 +58,9 @@ type RowClickParams = {
 };
 
 type ItemNameCellRendererCellData = {
+    dataAttributes?: {
+        [string]: string,
+    },
     id?: string,
     isExternal?: boolean,
     name: string,

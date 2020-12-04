@@ -79,6 +79,20 @@ describe('components/pill-selector-dropdown/PillSelector', () => {
             expect(wrapper.find('Pill').length).toBe(2);
         });
 
+        test('should render RoundPill instead of standard Pill when showRoundedPills prop is true', () => {
+            const options = [{ text: 'test', value: 'test' }];
+            const wrapper = shallow(
+                <PillSelector
+                    onInput={onInputStub}
+                    onRemove={onRemoveStub}
+                    selectedOptions={options}
+                    showRoundedPills
+                />,
+            );
+
+            expect(wrapper.find('RoundPill').length).toBe(1);
+        });
+
         test('should render pills when there are selected options', () => {
             const options = [
                 { displayText: 'test', value: 'test' },
@@ -117,6 +131,29 @@ describe('components/pill-selector-dropdown/PillSelector', () => {
             expect(pills.length).toBe(2);
             expect(pills.at(0).prop('isValid')).toBeFalsy();
             expect(pills.at(1).prop('isValid')).toBeFalsy();
+        });
+
+        test('should render round pills using the class name returned by getPillClassName', () => {
+            const getPillClassName = ({ className }) => className;
+            const options = [
+                { displayText: 'Pill 1', value: '1', className: 'MyClass1' },
+                { displayText: 'Pill 2', value: '2', className: 'MyClass2' },
+                { displayText: 'Pill 3', value: '3', className: 'MyClass2' },
+            ];
+            const wrapper = shallow(
+                <PillSelector
+                    showRoundedPills
+                    onInput={onInputStub}
+                    onRemove={onRemoveStub}
+                    selectedOptions={options}
+                    getPillClassName={getPillClassName}
+                />,
+            );
+
+            const pills = wrapper.find('RoundPill');
+            expect(pills.at(0).prop('className')).toBe(options[0].className);
+            expect(pills.at(1).prop('className')).toBe(options[1].className);
+            expect(pills.at(2).prop('className')).toBe(options[2].className);
         });
 
         test('should render pills when selected options are immutable', () => {

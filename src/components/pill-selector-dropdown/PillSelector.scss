@@ -25,7 +25,7 @@
         overflow-y: auto;
         background-color: $white;
         border: 1px solid darken($white, 20%);
-        border-radius: 2px;
+        border-radius: $bdl-border-radius-size;
         box-shadow: inset 0 1px 1px fade-out($black, .92);
         cursor: text;
         transition: border-color linear .15s, box-shadow linear .15s;
@@ -35,6 +35,7 @@
             border: 1px solid darken($primary-color, 10%);
         }
 
+        &.bdl-is-disabled,
         &.is-disabled {
             color: $bdl-gray-30;
             background-color: $bdl-gray-02;
@@ -77,6 +78,7 @@
             }
         }
 
+        .bdl-Tooltip,
         .tooltip {
             top: calc(100% - 5px) !important;
             right: 10px !important;
@@ -111,6 +113,13 @@
             &:hover {
                 outline: none;
             }
+        }
+
+        // when using the larger pills with user avatars,
+        // increase textarea line height to align text with pill content
+        .bdl-RoundPill ~ .bdl-PillSelector-input {
+            height: $bdl-line-height + $bdl-grid-unit * 2;
+            line-height: $bdl-line-height + $bdl-grid-unit * 2;
         }
     }
 }

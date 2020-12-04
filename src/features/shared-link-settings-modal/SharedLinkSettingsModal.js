@@ -112,6 +112,8 @@ class SharedLinkSettingsModal extends Component {
         isDirectLinkUnavailableDueToDownloadSettings: PropTypes.bool.isRequired,
         /** Whether or not direct link is unavailable only due to access policy setting */
         isDirectLinkUnavailableDueToAccessPolicy: PropTypes.bool.isRequired,
+        /** Whether or not direct link is unavailable only due to malicious content policy */
+        isDirectLinkUnavailableDueToMaliciousContent: PropTypes.bool.isRequired,
 
         // Classification props
         item: PropTypes.object,
@@ -301,7 +303,7 @@ class SharedLinkSettingsModal extends Component {
 
         return (
             message && (
-                <p className="link-settings-modal-notice">
+                <div className="link-settings-modal-notice">
                     <FormattedMessage {...message} />{' '}
                     <Link
                         href="https://community.box.com/t5/Using-Shared-Links/Shared-Link-Settings/ta-p/50250"
@@ -309,7 +311,7 @@ class SharedLinkSettingsModal extends Component {
                     >
                         <FormattedMessage {...messages.sharedLinkSettingWarningLinkText} />
                     </Link>
-                </p>
+                </div>
             )
         );
     }
@@ -323,6 +325,7 @@ class SharedLinkSettingsModal extends Component {
             isDirectLinkAvailable,
             isDirectLinkUnavailableDueToDownloadSettings,
             isDirectLinkUnavailableDueToAccessPolicy,
+            isDirectLinkUnavailableDueToMaliciousContent,
             isDownloadAvailable,
             item,
         } = this.props;
@@ -340,6 +343,7 @@ class SharedLinkSettingsModal extends Component {
                 isDirectLinkAvailable={isDirectLinkAvailable}
                 isDirectLinkUnavailableDueToDownloadSettings={isDirectLinkUnavailableDueToDownloadSettings}
                 isDirectLinkUnavailableDueToAccessPolicy={isDirectLinkUnavailableDueToAccessPolicy}
+                isDirectLinkUnavailableDueToMaliciousContent={isDirectLinkUnavailableDueToMaliciousContent}
                 isDownloadAvailable={isDownloadAvailable}
                 isDownloadEnabled={isDownloadEnabled}
                 onChange={this.onAllowDownloadChange}
@@ -388,7 +392,7 @@ class SharedLinkSettingsModal extends Component {
         const disableSaveBtn = !(canChangeDownload || canChangeExpiration || canChangePassword || canChangeVanityName);
         return (
             <Modal
-                className="shared-link-settings-modal"
+                className="be-modal shared-link-settings-modal"
                 isOpen={isOpen}
                 onRequestClose={submitting ? undefined : onRequestClose}
                 title={this.renderModalTitle()}

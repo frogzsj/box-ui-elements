@@ -5,6 +5,7 @@ exports[`features/classification/Classification should render a classified badge
   className="bdl-Classification "
 >
   <ClassifiedBadge
+    color="#ffeb7f"
     name="Confidential"
   />
   <Label
@@ -29,6 +30,7 @@ exports[`features/classification/Classification should render a classified badge
   className="bdl-Classification "
 >
   <ClassifiedBadge
+    color="#ffeb7f"
     name="Confidential"
     onClick={[Function]}
     tooltipText="fubar"
@@ -41,6 +43,7 @@ exports[`features/classification/Classification should render a classified badge
   className="bdl-Classification "
 >
   <ClassifiedBadge
+    color="#ffeb7f"
     name="Confidential"
     tooltipText="fubar"
   />
@@ -52,6 +55,7 @@ exports[`features/classification/Classification should render a classified badge
   className="bdl-Classification "
 >
   <ClassifiedBadge
+    color="#ffeb7f"
     name="Confidential"
   />
 </article>
@@ -62,6 +66,7 @@ exports[`features/classification/Classification should render a classified badge
   className="bdl-Classification "
 >
   <ClassifiedBadge
+    color="#ffeb7f"
     name="Confidential"
   />
   <Label
@@ -79,6 +84,7 @@ exports[`features/classification/Classification should render a classified badge
     </p>
   </Label>
   <SecurityControls
+    classificationName="Confidential"
     controls={
       Object {
         "sharedLink": Object {
@@ -87,7 +93,10 @@ exports[`features/classification/Classification should render a classified badge
       }
     }
     controlsFormat="short"
+    definition="fubar"
+    itemName=""
     maxAppCount={3}
+    shouldRenderLabel={true}
   />
 </article>
 `;

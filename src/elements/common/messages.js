@@ -712,6 +712,11 @@ const messages = defineMessages({
         description: 'Error message shown when one or more child folders failed to upload',
         defaultMessage: 'One or more child folders failed to upload.',
     },
+    uploadsPackageUploadErrorMessage: {
+        id: 'be.uploadsPackageUploadErrorMessage',
+        description: 'Error message to display when a macOS package failed to upload',
+        defaultMessage: 'Failed to upload package file. Please retry by saving as a single file.',
+    },
     uploadsDefaultErrorMessage: {
         id: 'be.uploadsDefaultErrorMessage',
         description: 'Default error message shown when upload fails',
@@ -744,8 +749,13 @@ const messages = defineMessages({
     },
     noActivity: {
         id: 'be.noActivity',
-        defaultMessage: 'No Activity Yet',
+        defaultMessage: 'No activity to show',
         description: 'Message displayed in an empty activity feed',
+    },
+    noActivityAnnotationPrompt: {
+        id: 'be.noActivityAnnotationPrompt',
+        defaultMessage: 'Hover over the preview and use the controls at the bottom to annotate the file.',
+        description: 'Message shown alongside empty activity feed when user can annotate',
     },
     noActivityCommentPrompt: {
         id: 'be.noActivityCommentPrompt',
@@ -787,6 +797,12 @@ const messages = defineMessages({
         defaultMessage: '{name} uploaded v{version_number}',
         description:
             'Message displayed in the activity feed for a newly uploaded version. {name} is the user who performed the action. {version_number} is the file version string.',
+    },
+    fileRequestDisplayName: {
+        defaultMessage: 'File Request',
+        description:
+            'name of the File Request feature used to translate when a File Request is uploaded by the service',
+        id: 'be.fileRequestDisplayName',
     },
     defaultInlineErrorContentMessage: {
         id: 'be.defaultInlineErrorContentMessage',

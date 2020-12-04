@@ -7,10 +7,12 @@ import * as React from 'react';
 import noop from 'lodash/noop';
 import classNames from 'classnames';
 import { FormattedMessage, injectIntl } from 'react-intl';
+import type { InjectIntlProvidedProps } from 'react-intl';
 import Avatar from '../Avatar';
 import CommentFormControls from './CommentFormControls';
 import DraftJSMentionSelector, {
     createMentionSelectorState,
+    getFormattedCommentText,
 } from '../../../../components/form-elements/draft-js-mention-selector';
 import Form from '../../../../components/form-elements/form/Form';
 import Media from '../../../../components/media';
@@ -29,10 +31,11 @@ type Props = {
     isDisabled?: boolean,
     isEditing?: boolean,
     isOpen: boolean,
-    mentionSelectorContacts?: SelectorItems,
+    mentionSelectorContacts?: SelectorItems<>,
     onCancel: Function,
-    onFocus: Function,
-    onSubmit: Function,
+    onFocus?: Function,
+    onSubmit?: Function,
+    showTip?: boolean,
     tagged_message?: string,
     updateComment?: Function,
     user: User,
@@ -96,42 +99,7 @@ class CommentForm extends React.Component<Props, State> {
     getFormattedCommentText = (): { hasMention: boolean, text: string } => {
         const { commentEditorState } = this.state;
 
-        const contentState = commentEditorState.getCurrentContent();
-        const blockMap = contentState.getBlockMap();
-
-        const resultStringArr = [];
-
-        // The API needs to explicitly know if a message contains a mention.
-        let hasMention = false;
-
-        // For all ContentBlocks in the ContentState:
-        blockMap.forEach(block => {
-            const text = block.getText();
-            const blockMapStringArr = [];
-
-            // Break down the ContentBlock into ranges
-            block.findEntityRanges(
-                () => true,
-                (start, end) => {
-                    const entityKey = block.getEntityAt(start);
-                    // If the range is an Entity, format its text eg "@[1:Username]"
-                    // Otherwise append its text to the block result as-is
-                    if (entityKey) {
-                        const entity = contentState.getEntity(entityKey);
-                        const stringToAdd = `@[${entity.getData().id}:${text.substring(start + 1, end)}]`;
-                        blockMapStringArr.push(stringToAdd);
-                        hasMention = true;
-                    } else {
-                        blockMapStringArr.push(text.substring(start, end));
-                    }
-                },
-            );
-            resultStringArr.push(blockMapStringArr.join(''));
-        });
-
-        // Concatenate the array of block strings with newlines
-        // (Each block represents a paragraph)
-        return { text: resultStringArr.join('\n'), hasMention };
+        return getFormattedCommentText(commentEditorState);
     };
 
     render(): React.Node {
@@ -148,6 +116,7 @@ class CommentForm extends React.Component<Props, State> {
             isEditing,
             tagged_message,
             getAvatarUrl,
+            showTip = true,
         } = this.props;
         const { commentEditorState } = this.state;
         const inputContainerClassNames = classNames('bcs-CommentForm', className, {
@@ -172,16 +141,18 @@ class CommentForm extends React.Component<Props, State> {
                             isDisabled={isDisabled}
                             isRequired={isOpen}
                             name="commentText"
-                            label="Comment"
+                            label={formatMessage(messages.commentLabel)}
                             onChange={this.onMentionSelectorChangeHandler}
                             onFocus={onFocus}
                             onMention={getMentionWithQuery}
                             placeholder={tagged_message ? undefined : formatMessage(messages.commentWrite)}
                             validateOnBlur={false}
                         />
-                        <aside className="bcs-CommentForm-tip">
-                            <FormattedMessage {...messages.atMentionTip} />
-                        </aside>
+                        {showTip && (
+                            <aside className="bcs-CommentForm-tip">
+                                <FormattedMessage {...messages.atMentionTip} />
+                            </aside>
+                        )}
 
                         {isOpen && <CommentFormControls onCancel={onCancel} />}
                     </Form>

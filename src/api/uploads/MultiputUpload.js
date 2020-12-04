@@ -173,8 +173,10 @@ class MultiputUpload extends BaseMultiput {
         progressCallback,
         successCallback,
         overwrite = true,
+        conflictCallback,
         fileId,
     }: {
+        conflictCallback?: Function,
         errorCallback?: Function,
         file: File,
         fileId: ?string,
@@ -190,6 +192,7 @@ class MultiputUpload extends BaseMultiput {
         this.progressCallback = progressCallback || noop;
         this.successCallback = successCallback || noop;
         this.overwrite = overwrite;
+        this.conflictCallback = conflictCallback;
         this.fileId = fileId;
     }
 
@@ -208,15 +211,19 @@ class MultiputUpload extends BaseMultiput {
      */
     upload({
         file,
+        fileDescription,
         folderId,
         errorCallback,
         progressCallback,
         successCallback,
         overwrite = true,
+        conflictCallback,
         fileId,
     }: {
+        conflictCallback?: Function,
         errorCallback?: Function,
         file: File,
+        fileDescription: ?string,
         fileId: ?string,
         folderId: string,
         overwrite?: boolean,
@@ -237,8 +244,10 @@ class MultiputUpload extends BaseMultiput {
         this.sha1Worker = createWorker();
         this.sha1Worker.addEventListener('message', this.onWorkerMessage);
 
+        this.conflictCallback = conflictCallback;
         this.overwrite = overwrite;
         this.fileId = fileId;
+        this.fileDescription = fileDescription;
 
         this.makePreflightRequest();
     }
@@ -417,6 +426,7 @@ class MultiputUpload extends BaseMultiput {
      * @param {Function} [options.errorCallback]
      * @param {Function} [options.progressCallback]
      * @param {Function} [options.successCallback]
+     * @param {Function} [options.conflictCallback]
      * @return {void}
      */
     resume({
@@ -427,8 +437,10 @@ class MultiputUpload extends BaseMultiput {
         sessionId,
         successCallback,
         overwrite = true,
+        conflictCallback,
         fileId,
     }: {
+        conflictCallback?: Function,
         errorCallback?: Function,
         file: File,
         fileId: ?string,
@@ -438,7 +450,16 @@ class MultiputUpload extends BaseMultiput {
         sessionId: string,
         successCallback?: Function,
     }): void {
-        this.setFileInfo({ file, folderId, errorCallback, progressCallback, successCallback, overwrite, fileId });
+        this.setFileInfo({
+            file,
+            folderId,
+            errorCallback,
+            progressCallback,
+            successCallback,
+            conflictCallback,
+            overwrite,
+            fileId,
+        });
         this.sessionId = sessionId;
 
         if (!this.sha1Worker) {
@@ -487,22 +508,6 @@ class MultiputUpload extends BaseMultiput {
             abort: session_endpoints.abort,
             logEvent: session_endpoints.log_event,
         };
-
-        // Reset uploading process for parts that were in progress when the upload failed
-        let nextUploadIndex = this.firstUnuploadedPartIndex;
-        while (this.numPartsUploading > 0) {
-            const part = this.parts[nextUploadIndex];
-            if (part && part.state === PART_STATE_UPLOADING) {
-                part.state = PART_STATE_DIGEST_READY;
-                part.numUploadRetriesPerformed = 0;
-                part.timing = {};
-                part.uploadedBytes = 0;
-
-                this.numPartsUploading -= 1;
-                this.numPartsDigestReady += 1;
-            }
-            nextUploadIndex += 1;
-        }
 
         this.processNextParts();
     }
@@ -655,6 +660,23 @@ class MultiputUpload extends BaseMultiput {
      */
     partUploadErrorHandler = (error: Error, eventInfo: string): void => {
         this.sessionErrorHandler(error, LOG_EVENT_TYPE_PART_UPLOAD_RETRIES_EXCEEDED, eventInfo);
+        // Pause the rest of the parts.
+        // can't cancel parts because cancel destroys the part and parts are only created in createSession call
+        if (this.isResumableUploadsEnabled) {
+            // Reset uploading process for parts that were in progress when the upload failed
+            let nextUploadIndex = this.firstUnuploadedPartIndex;
+            while (this.numPartsUploading > 0) {
+                const part = this.parts[nextUploadIndex];
+                if (part && part.state === PART_STATE_UPLOADING) {
+                    part.reset();
+                    part.pause();
+
+                    this.numPartsUploading -= 1;
+                    this.numPartsDigestReady += 1;
+                }
+                nextUploadIndex += 1;
+            }
+        }
     };
 
     /**
@@ -920,6 +942,9 @@ class MultiputUpload extends BaseMultiput {
         if (fileLastModified) {
             data.attributes.content_modified_at = fileLastModified;
         }
+        if (this.fileDescription) {
+            data.attributes.description = this.fileDescription;
+        }
 
         const clientEventInfo = {
             avg_part_read_time: Math.round(stats.totalPartReadTime / this.parts.length),
@@ -1056,7 +1081,11 @@ class MultiputUpload extends BaseMultiput {
                 // can get called on retries
                 this.numPartsDigestReady -= 1;
                 this.numPartsUploading += 1;
-                part.upload();
+                if (part.isPaused) {
+                    part.unpause();
+                } else {
+                    part.upload();
+                }
                 break;
             }
         }
@@ -1207,6 +1236,10 @@ class MultiputUpload extends BaseMultiput {
     async resolveConflict(data: Object): Promise<any> {
         if (this.overwrite && data.context_info) {
             this.fileId = data.context_info.conflicts.id;
+            return;
+        }
+        if (this.conflictCallback) {
+            this.fileName = this.conflictCallback(this.fileName);
             return;
         }
 

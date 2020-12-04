@@ -12,6 +12,8 @@ import noop from 'lodash/noop';
 import uniqueid from 'lodash/uniqueId';
 import cloneDeep from 'lodash/cloneDeep';
 import { getTypedFileId, getTypedFolderId } from '../../utils/file';
+import Browser from '../../utils/Browser';
+
 import makeResponsive from '../common/makeResponsive';
 import Internationalize from '../common/Internationalize';
 import FolderUpload from '../../api/uploads/FolderUpload';
@@ -20,10 +22,12 @@ import {
     getDataTransferItemId,
     getFileId,
     getFileFromDataTransferItem,
+    getPackageFileFromDataTransferItem,
     getFile,
     getFileAPIOptions,
     getDataTransferItemAPIOptions,
     isDataTransferItemAFolder,
+    isDataTransferItemAPackage,
     isMultiputSupported,
 } from '../../utils/uploads';
 import DroppableContent from './DroppableContent';
@@ -71,15 +75,20 @@ type Props = {
     isResumableUploadsEnabled: boolean,
     isSmall: boolean,
     isTouch: boolean,
+    isUploadFallbackLogicEnabled: boolean,
     language?: string,
     measureRef: Function,
     messages?: StringMap,
     onBeforeUpload: (file: Array<UploadFileWithAPIOptions | File>) => void,
     onCancel: Function,
+    onClickCancel: UploadItem => void,
+    onClickResume: UploadItem => void,
+    onClickRetry: UploadItem => void,
     onClose: Function,
     onComplete: Function,
     onError: Function,
     onMinimize?: Function,
+    onProgress: Function,
     onResume: Function,
     onUpload: Function,
     overwrite: boolean,
@@ -131,11 +140,15 @@ class ContentUploader extends Component<Props, State> {
         fileLimit: FILE_LIMIT_DEFAULT,
         uploadHost: DEFAULT_HOSTNAME_UPLOAD,
         onBeforeUpload: noop,
+        onClickCancel: noop,
+        onClickResume: noop,
+        onClickRetry: noop,
         onClose: noop,
         onComplete: noop,
         onError: noop,
         onResume: noop,
         onUpload: noop,
+        onProgress: noop,
         overwrite: true,
         useUploadsManager: false,
         files: [],
@@ -143,6 +156,7 @@ class ContentUploader extends Component<Props, State> {
         onCancel: noop,
         isFolderUploadEnabled: false,
         isResumableUploadsEnabled: false,
+        isUploadFallbackLogicEnabled: false,
         dataTransferItems: [],
         isDraggingItemsToUploadsManager: false,
     };
@@ -205,6 +219,7 @@ class ContentUploader extends Component<Props, State> {
             return;
         }
 
+        // TODO: this gets called unnecessarily (upon each render regardless of the queue not changing)
         this.addFilesWithOptionsToUploadQueueAndStartUpload(files, dataTransferItems);
     }
 
@@ -339,6 +354,24 @@ class ContentUploader extends Component<Props, State> {
     };
 
     /**
+     * Add dropped items to the upload queue
+     *
+     * @private
+     * @param {DataTransfer} droppedItems
+     * @param {Function} itemUpdateCallback
+     * @returns {Promise<any>}
+     */
+    addDroppedItemsToUploadQueue = (droppedItems: DataTransfer, itemUpdateCallback: Function): void => {
+        if (droppedItems.items) {
+            this.addDataTransferItemsToUploadQueue(droppedItems.items, itemUpdateCallback);
+        } else {
+            Array.from(droppedItems.files).forEach(file => {
+                this.addFilesToUploadQueue([file], itemUpdateCallback);
+            });
+        }
+    };
+
+    /**
      * Add dataTransferItems to the upload queue
      *
      * @private
@@ -357,10 +390,12 @@ class ContentUploader extends Component<Props, State> {
 
         const folderItems = [];
         const fileItems = [];
-
+        const packageItems = [];
         Array.from(dataTransferItems).forEach(item => {
             const isDirectory = isDataTransferItemAFolder(item);
-            if (isDirectory && isFolderUploadEnabled) {
+            if (Browser.isSafari() && isDataTransferItemAPackage(item)) {
+                packageItems.push(item);
+            } else if (isDirectory && isFolderUploadEnabled) {
                 folderItems.push(item);
             } else if (!isDirectory) {
                 fileItems.push(item);
@@ -368,6 +403,7 @@ class ContentUploader extends Component<Props, State> {
         });
 
         this.addFileDataTransferItemsToUploadQueue(fileItems, itemUpdateCallback);
+        this.addPackageDataTransferItemsToUploadQueue(packageItems, itemUpdateCallback);
         this.addFolderDataTransferItemsToUploadQueue(folderItems, itemUpdateCallback);
     };
 
@@ -385,6 +421,29 @@ class ContentUploader extends Component<Props, State> {
     ): void => {
         dataTransferItems.forEach(async item => {
             const file = await getFileFromDataTransferItem(item);
+            if (!file) {
+                return;
+            }
+
+            this.addFilesToUploadQueue([file], itemUpdateCallback);
+        });
+    };
+
+    /**
+     * Add dataTransferItem of package type to the upload queue
+     *
+     * @private
+     * @param {Array<DataTransferItem | UploadDataTransferItemWithAPIOptions>} dataTransferItems
+     * @param {Function} itemUpdateCallback
+     * @returns {void}
+     */
+    addPackageDataTransferItemsToUploadQueue = (
+        dataTransferItems: Array<DataTransferItem | UploadDataTransferItemWithAPIOptions>,
+        itemUpdateCallback: Function,
+    ): void => {
+        dataTransferItems.forEach(item => {
+            const file = getPackageFileFromDataTransferItem(item);
+
             if (!file) {
                 return;
             }
@@ -422,7 +481,6 @@ class ContentUploader extends Component<Props, State> {
 
         const fileAPIOptions: Object = getDataTransferItemAPIOptions(newItems[0]);
         const { folderId = rootFolderId } = fileAPIOptions;
-
         newItems.forEach(async item => {
             const folderUpload = this.getFolderUploadAPI(folderId);
             await folderUpload.buildFolderTreeFromDataTransferItem(item);
@@ -612,7 +670,7 @@ class ContentUploader extends Component<Props, State> {
      * @return {UploadAPI} - Instance of Upload API
      */
     getUploadAPI(file: File, uploadAPIOptions?: UploadItemAPIOptions) {
-        const { chunked, isResumableUploadsEnabled } = this.props;
+        const { chunked, isResumableUploadsEnabled, isUploadFallbackLogicEnabled } = this.props;
         const { size } = file;
         const factory = this.createAPIFactory(uploadAPIOptions);
 
@@ -621,6 +679,9 @@ class ContentUploader extends Component<Props, State> {
                 const chunkedUploadAPI = factory.getChunkedUploadAPI();
                 if (isResumableUploadsEnabled) {
                     chunkedUploadAPI.isResumableUploadsEnabled = true;
+                }
+                if (isUploadFallbackLogicEnabled) {
+                    chunkedUploadAPI.isUploadFallbackLogicEnabled = true;
                 }
                 return chunkedUploadAPI;
             }
@@ -632,7 +693,12 @@ class ContentUploader extends Component<Props, State> {
             /* eslint-enable no-console */
         }
 
-        return factory.getPlainUploadAPI();
+        const plainUploadAPI = factory.getPlainUploadAPI();
+        if (isUploadFallbackLogicEnabled) {
+            plainUploadAPI.isUploadFallbackLogicEnabled = true;
+        }
+
+        return plainUploadAPI;
     }
 
     /**
@@ -966,6 +1032,9 @@ class ContentUploader extends Component<Props, State> {
         item.progress = Math.min(Math.round((event.loaded / event.total) * 100), 100);
         item.status = item.progress === 100 ? STATUS_STAGED : STATUS_IN_PROGRESS;
 
+        const { onProgress } = this.props;
+        onProgress(item);
+
         const { items } = this.state;
         items[items.indexOf(item)] = item;
 
@@ -980,9 +1049,10 @@ class ContentUploader extends Component<Props, State> {
      * @return {void}
      */
     onClick = (item: UploadItem) => {
-        const { chunked, isResumableUploadsEnabled } = this.props;
+        const { chunked, isResumableUploadsEnabled, onClickCancel, onClickResume, onClickRetry } = this.props;
         const { status, file } = item;
-        const isChunkedUpload = chunked && file.size > CHUNKED_UPLOAD_MIN_SIZE_BYTES && isMultiputSupported();
+        const isChunkedUpload =
+            chunked && !item.isFolder && file.size > CHUNKED_UPLOAD_MIN_SIZE_BYTES && isMultiputSupported();
         const isResumable = isResumableUploadsEnabled && isChunkedUpload && item.api.sessionId;
 
         switch (status) {
@@ -991,13 +1061,17 @@ class ContentUploader extends Component<Props, State> {
             case STATUS_COMPLETE:
             case STATUS_PENDING:
                 this.removeFileFromUploadQueue(item);
+                onClickCancel(item);
                 break;
             case STATUS_ERROR:
                 if (isResumable) {
+                    item.bytesUploadedOnLastResume = item.api.totalUploadedBytes;
                     this.resumeFile(item);
+                    onClickResume(item);
                 } else {
                     this.resetFile(item);
                     this.uploadFile(item);
+                    onClickRetry(item);
                 }
                 break;
             default:
@@ -1174,7 +1248,7 @@ class ContentUploader extends Component<Props, State> {
                 ) : (
                     <div ref={measureRef} className={styleClassName} id={this.id}>
                         <DroppableContent
-                            addDataTransferItemsToUploadQueue={this.addDataTransferItemsToUploadQueue}
+                            addDataTransferItemsToUploadQueue={this.addDroppedItemsToUploadQueue}
                             addFiles={this.addFilesToUploadQueue}
                             allowedTypes={['Files']}
                             isFolderUploadEnabled={isFolderUploadEnabled}
@@ -1200,5 +1274,6 @@ class ContentUploader extends Component<Props, State> {
     }
 }
 
+export type ContentUploaderProps = Props;
 export default makeResponsive(ContentUploader);
 export { ContentUploader as ContentUploaderComponent, CHUNKED_UPLOAD_MIN_SIZE_BYTES };

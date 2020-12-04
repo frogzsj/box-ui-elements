@@ -2,23 +2,28 @@
 import * as React from 'react';
 import type { Node } from 'react';
 import { injectIntl } from 'react-intl';
-import type { InjectIntlProvidedProps, IntlShape } from 'react-intl';
 import { AutoSizer } from 'react-virtualized/dist/es/AutoSizer/index';
 import { WindowScroller } from 'react-virtualized/dist/es/WindowScroller/index';
-import BaseVirtualizedTable from './BaseVirtualizedTable';
+
+import type { InjectIntlProvidedProps } from 'react-intl';
 import type { SortParams } from './flowTypes';
+
+import BaseVirtualizedTable from './BaseVirtualizedTable';
+
 import './VirtualizedTable.scss';
 
 type SortHandler = SortParams => void;
 
-type Props = {
-    children: Node | (IntlShape => Node),
+export type VirtualizedTableProps = {
+    children: Node | (any => Node),
     className?: string,
     height?: number,
     rowData: Array<Object>,
     rowGetter?: ({ index: number }) => any,
     sort?: SortHandler,
-} & InjectIntlProvidedProps;
+};
+
+type Props = VirtualizedTableProps & InjectIntlProvidedProps;
 
 const VirtualizedTable = ({ children, height, intl, ...rest }: Props) => (
     <AutoSizer defaultHeight={height} disableHeight>

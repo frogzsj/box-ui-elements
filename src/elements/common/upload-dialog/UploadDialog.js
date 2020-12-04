@@ -7,6 +7,7 @@
 import React from 'react';
 import Modal from 'react-modal';
 import { injectIntl } from 'react-intl';
+import type { InjectIntlProvidedProps } from 'react-intl';
 import ContentUploader from '../../content-uploader';
 import messages from '../messages';
 import { CLASS_MODAL_CONTENT_FULL_BLEED, CLASS_MODAL_OVERLAY, CLASS_MODAL } from '../../../constants';
@@ -15,6 +16,7 @@ import type { Token } from '../../../common/types/core';
 type Props = {
     apiHost: string,
     appElement: HTMLElement,
+    contentUploaderProps: ContentUploaderProps,
     currentFolderId: ?string,
     isOpen: boolean,
     onClose: Function,
@@ -40,6 +42,7 @@ const UploadDialog = ({
     parentElement,
     appElement,
     onUpload,
+    contentUploaderProps,
     requestInterceptor,
     responseInterceptor,
     intl,
@@ -55,6 +58,7 @@ const UploadDialog = ({
         portalClassName={`${CLASS_MODAL} be-modal-upload`}
     >
         <ContentUploader
+            {...contentUploaderProps}
             apiHost={apiHost}
             onClose={onClose}
             onComplete={onUpload}

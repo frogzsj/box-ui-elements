@@ -34,6 +34,15 @@ class ContentExplorerModalContainer extends Component {
         onNewFolderModalShown: PropTypes.func,
         /** Called when the NewFolderModal is closed. */
         onNewFolderModalClosed: PropTypes.func,
+        /** Called when selected button is clicked */
+        onSelectedClick: PropTypes.func,
+        /**
+         * Called when an item is selected
+         *
+         * @param {Object} selectedItem
+         * @param {number} selectedItemIndex
+         */
+        onSelectItem: PropTypes.func,
         /** Folder is in the process of being created. */
         isCreatingFolder: PropTypes.bool,
         /** Message that will be shown when there was an error creating the folder. */
@@ -165,6 +174,8 @@ class ContentExplorerModalContainer extends Component {
             isCreateNewFolderAllowed,
             onSearchSubmit,
             onExitSearch,
+            onSelectedClick,
+            onSelectItem,
             items,
             numItemsPerPage,
             numTotalItems,
@@ -194,6 +205,8 @@ class ContentExplorerModalContainer extends Component {
                     onChooseItems={onChooseItems}
                     onMoveItem={onMoveItem}
                     onCopyItem={onCopyItem}
+                    onSelectedClick={onSelectedClick}
+                    onSelectItem={onSelectItem}
                     onCreateNewFolderButtonClick={this.handleCreateNewFolderButtonClick}
                     isCreateNewFolderAllowed={isCreateNewFolderAllowed}
                     onSearchSubmit={onSearchSubmit}

@@ -7,6 +7,7 @@
 import React from 'react';
 import Modal from 'react-modal';
 import { injectIntl } from 'react-intl';
+import type { InjectIntlProvidedProps } from 'react-intl';
 import cloneDeep from 'lodash/cloneDeep';
 import messages from '../common/messages';
 import ContentPreview from '../content-preview';
@@ -29,11 +30,13 @@ type Props = {
     onDownload: Function,
     onPreview: Function,
     parentElement: HTMLElement,
+    previewLibraryVersion: string,
     requestInterceptor?: Function,
     responseInterceptor?: Function,
     sharedLink?: string,
     sharedLinkPassword?: string,
     staticHost: string,
+    staticPath: string,
     token: Token,
 } & InjectIntlProvidedProps;
 
@@ -52,6 +55,8 @@ const PreviewDialog = ({
     apiHost,
     appHost,
     staticHost,
+    staticPath,
+    previewLibraryVersion,
     sharedLink,
     sharedLinkPassword,
     contentPreviewProps,
@@ -86,6 +91,8 @@ const PreviewDialog = ({
                 apiHost={apiHost}
                 appHost={appHost}
                 staticHost={staticHost}
+                staticPath={staticPath}
+                previewLibraryVersion={previewLibraryVersion}
                 cache={cache}
                 token={token}
                 hasHeader

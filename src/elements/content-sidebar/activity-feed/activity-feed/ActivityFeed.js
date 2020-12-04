@@ -8,16 +8,17 @@ import getProp from 'lodash/get';
 import noop from 'lodash/noop';
 import { FormattedMessage } from 'react-intl';
 import classNames from 'classnames';
-import { scrollIntoView } from '../../../../utils/dom';
 import ActiveState from './ActiveState';
 import CommentForm from '../comment-form';
 import EmptyState from './EmptyState';
-import { collapseFeedState, ItemTypes } from './activityFeedUtils';
 import InlineError from '../../../../components/inline-error/InlineError';
 import LoadingIndicator from '../../../../components/loading-indicator/LoadingIndicator';
 import messages from './messages';
-import type { FocusableFeedItemType, FeedItems } from '../../../../common/types/feed';
-import type { SelectorItems, User, BoxItem } from '../../../../common/types/core';
+import { collapseFeedState, ItemTypes } from './activityFeedUtils';
+import { PERMISSION_CAN_CREATE_ANNOTATIONS } from '../../../../constants';
+import { scrollIntoView } from '../../../../utils/dom';
+import type { Annotation, AnnotationPermission, FocusableFeedItemType, FeedItems } from '../../../../common/types/feed';
+import type { SelectorItems, User, GroupMini, BoxItem } from '../../../../common/types/core';
 import type { GetAvatarUrlCallback, GetProfileUrlCallback } from '../../../common/flowTypes';
 import type { Translations, Errors } from '../../flowTypes';
 import './ActivityFeed.scss';
@@ -26,7 +27,7 @@ type Props = {
     activeFeedEntryId?: string,
     activeFeedEntryType?: FocusableFeedItemType,
     activityFeedError: ?Errors,
-    approverSelectorContacts?: SelectorItems,
+    approverSelectorContacts?: SelectorItems<User | GroupMini>,
     currentUser?: User,
     feedItems?: FeedItems,
     file: BoxItem,
@@ -35,7 +36,10 @@ type Props = {
     getMentionWithQuery?: Function,
     getUserProfileUrl?: GetProfileUrlCallback,
     isDisabled?: boolean,
-    mentionSelectorContacts?: SelectorItems,
+    mentionSelectorContacts?: SelectorItems<User>,
+    onAnnotationDelete?: ({ id: string, permissions: AnnotationPermission }) => void,
+    onAnnotationEdit?: (id: string, text: string, permissions: AnnotationPermission) => void,
+    onAnnotationSelect?: (annotation: Annotation) => void,
     onAppActivityDelete?: Function,
     onCommentCreate?: Function,
     onCommentDelete?: Function,
@@ -45,6 +49,7 @@ type Props = {
     onTaskDelete?: Function,
     onTaskModalClose?: Function,
     onTaskUpdate?: Function,
+    onTaskView?: Function,
     onVersionHistoryClick?: Function,
     translations?: Translations,
 };
@@ -67,22 +72,26 @@ class ActivityFeed extends React.Component<Props, State> {
     }
 
     componentDidUpdate(prevProps: Props, prevState: State) {
-        const { feedItems: prevFeedItems } = prevProps;
+        const {
+            activeFeedEntryId: prevActiveFeedEntryId,
+            currentUser: prevCurrentUser,
+            feedItems: prevFeedItems,
+        } = prevProps;
         const { feedItems: currFeedItems, activeFeedEntryId } = this.props;
         const { isInputOpen: prevIsInputOpen } = prevState;
         const { isInputOpen: currIsInputOpen } = this.state;
 
-        const hasLoaded = this.hasLoaded();
+        const hasLoaded = this.hasLoaded(prevCurrentUser, prevFeedItems);
         const hasMoreItems = prevFeedItems && currFeedItems && prevFeedItems.length < currFeedItems.length;
         const didLoadFeedItems = prevFeedItems === undefined && currFeedItems !== undefined;
         const hasInputOpened = currIsInputOpen !== prevIsInputOpen;
+        const hasActiveFeedEntryIdChanged = activeFeedEntryId !== prevActiveFeedEntryId;
 
         if ((hasLoaded || hasMoreItems || didLoadFeedItems || hasInputOpened) && activeFeedEntryId === undefined) {
             this.resetFeedScroll();
         }
 
-        // do the scroll only once after first fetch of feed items
-        if (didLoadFeedItems) {
+        if (didLoadFeedItems || hasActiveFeedEntryIdChanged) {
             this.scrollToActiveFeedItemOrErrorMessage();
         }
     }
@@ -118,8 +127,16 @@ class ActivityFeed extends React.Component<Props, State> {
         return feedItems.length === 0 || (feedItems.length === 1 && feedItems[0].type === ItemTypes.fileVersion);
     };
 
-    hasLoaded = ({ currentUser, feedItems }: Props = this.props): boolean =>
-        currentUser !== undefined && feedItems !== undefined;
+    /**
+     * Determines whether currentUser and feedItems have loaded.
+     * @param prevCurrentUser - The previous value of the currentUser prop
+     * @param prevFeedItems - The previous value of the feedItems prop
+     * @returns {boolean}
+     */
+    hasLoaded = (prevCurrentUser?: User, prevFeedItems?: FeedItems): boolean => {
+        const { currentUser, feedItems } = this.props;
+        return currentUser !== undefined && feedItems !== undefined && (!prevCurrentUser || !prevFeedItems);
+    };
 
     /**
      * Scrolls the container to the bottom
@@ -158,7 +175,7 @@ class ActivityFeed extends React.Component<Props, State> {
      * @param {number} dueAt - Task's due date
      * @return {void}
      */
-    onTaskCreate = ({ text, assignees, dueAt }: { assignees: SelectorItems, dueAt: string, text: string }): void => {
+    onTaskCreate = ({ text, assignees, dueAt }: { assignees: SelectorItems<>, dueAt: string, text: string }): void => {
         const { onTaskCreate = noop } = this.props;
         onTaskCreate(text, assignees, dueAt);
         this.commentFormSubmitHandler();
@@ -177,31 +194,36 @@ class ActivityFeed extends React.Component<Props, State> {
 
     render(): React.Node {
         const {
-            translations,
-            approverSelectorContacts,
-            mentionSelectorContacts,
-            currentUser,
-            isDisabled,
-            getAvatarUrl,
-            getUserProfileUrl,
-            file,
-            onAppActivityDelete,
-            onCommentCreate,
-            getApproverWithQuery,
-            getMentionWithQuery,
-            activityFeedError,
-            onVersionHistoryClick,
-            onCommentDelete,
-            onCommentUpdate,
-            onTaskDelete,
-            onTaskUpdate,
-            onTaskAssignmentUpdate,
-            onTaskModalClose,
-            feedItems,
             activeFeedEntryId,
             activeFeedEntryType,
+            activityFeedError,
+            approverSelectorContacts,
+            currentUser,
+            feedItems,
+            file,
+            getApproverWithQuery,
+            getAvatarUrl,
+            getMentionWithQuery,
+            getUserProfileUrl,
+            isDisabled,
+            mentionSelectorContacts,
+            onAnnotationDelete,
+            onAnnotationEdit,
+            onAnnotationSelect,
+            onAppActivityDelete,
+            onCommentCreate,
+            onCommentDelete,
+            onCommentUpdate,
+            onTaskAssignmentUpdate,
+            onTaskDelete,
+            onTaskModalClose,
+            onTaskUpdate,
+            onTaskView,
+            onVersionHistoryClick,
+            translations,
         } = this.props;
         const { isInputOpen } = this.state;
+        const hasAnnotationCreatePermission = getProp(file, ['permissions', PERMISSION_CAN_CREATE_ANNOTATIONS], false);
         const hasCommentPermission = getProp(file, 'permissions.can_comment', false);
         const showCommentForm = !!(currentUser && hasCommentPermission && onCommentCreate && feedItems);
 
@@ -213,6 +235,7 @@ class ActivityFeed extends React.Component<Props, State> {
             feedItems.find(({ id, type }) => id === activeFeedEntryId && type === activeFeedEntryType);
 
         const errorMessageByEntryType = {
+            annotation: messages.annotationMissingError,
             comment: messages.commentMissingError,
             task: messages.taskMissingError,
         };
@@ -222,6 +245,7 @@ class ActivityFeed extends React.Component<Props, State> {
             : undefined;
 
         const isInlineFeedItemErrorVisible = !isLoading && activeFeedEntryType && !activeEntry;
+        const currentFileVersionId = getProp(file, 'file_version.id');
 
         return (
             // eslint-disable-next-line
@@ -238,21 +262,29 @@ class ActivityFeed extends React.Component<Props, State> {
                         </div>
                     )}
 
-                    {isEmpty && !isLoading && <EmptyState showCommentMessage={showCommentForm} />}
+                    {isEmpty && !isLoading && (
+                        <EmptyState
+                            showAnnotationMessage={hasAnnotationCreatePermission}
+                            showCommentMessage={showCommentForm}
+                        />
+                    )}
                     {!isEmpty && !isLoading && (
                         <ActiveState
                             {...activityFeedError}
                             items={collapseFeedState(feedItems)}
                             isDisabled={isDisabled}
                             currentUser={currentUser}
+                            currentFileVersionId={currentFileVersionId}
                             onTaskAssignmentUpdate={onTaskAssignmentUpdate}
+                            onAnnotationDelete={onAnnotationDelete}
+                            onAnnotationEdit={onAnnotationEdit}
+                            onAnnotationSelect={onAnnotationSelect}
                             onAppActivityDelete={onAppActivityDelete}
                             onCommentDelete={hasCommentPermission ? onCommentDelete : noop}
                             onCommentEdit={hasCommentPermission ? onCommentUpdate : noop}
-                            // We don't know task edit/delete specific permissions,
-                            // but you must at least be able to comment to do these operations.
-                            onTaskDelete={hasCommentPermission ? onTaskDelete : noop}
-                            onTaskEdit={hasCommentPermission ? onTaskUpdate : noop}
+                            onTaskDelete={onTaskDelete}
+                            onTaskEdit={onTaskUpdate}
+                            onTaskView={onTaskView}
                             onTaskModalClose={onTaskModalClose}
                             onVersionInfo={onVersionHistoryClick ? this.openVersionHistoryPopup : null}
                             translations={translations}
@@ -288,6 +320,7 @@ class ActivityFeed extends React.Component<Props, State> {
                         createComment={hasCommentPermission ? this.onCommentCreate : noop}
                         getMentionWithQuery={getMentionWithQuery}
                         isOpen={isInputOpen}
+                        // $FlowFixMe
                         user={currentUser}
                         onCancel={this.commentFormCancelHandler}
                         onFocus={this.commentFormFocusHandler}

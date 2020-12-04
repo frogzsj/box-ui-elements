@@ -1,7 +1,7 @@
 // @flow
 import * as React from 'react';
 import classNames from 'classnames';
-import type { IntlShape } from 'react-intl';
+
 import noop from 'lodash/noop';
 import { getFileExtension } from '../../utils/file';
 import messages from './messages';
@@ -12,11 +12,11 @@ import baseCellRenderer from './baseCellRenderer';
 import type { ItemNameCellRendererCellData, ItemNameCellRendererParams } from './flowTypes';
 import './ItemNameCell.scss';
 
-const itemNameCellRenderer = (intl: IntlShape, onClick?: Function = noop) => (
+const itemNameCellRenderer = (intl: any, onClick?: Function = noop) => (
     cellRendererParams: ItemNameCellRendererParams,
 ) =>
     baseCellRenderer(cellRendererParams, (cellValue: ItemNameCellRendererCellData) => {
-        const { name, type, isExternal } = cellValue;
+        const { name, type, isExternal, dataAttributes } = cellValue;
         const extension = getFileExtension(name);
         const displayName = isExternal ? intl.formatMessage(messages.externalFile) : name;
         const isFolder = type === 'folder';
@@ -30,14 +30,21 @@ const itemNameCellRenderer = (intl: IntlShape, onClick?: Function = noop) => (
                 {isFolder ? (
                     <>
                         <FolderIcon dimension={32} isExternal={isExternal} />
-                        <PlainButton className={itemNameCellClass} onClick={() => onClick(cellValue)} type="button">
+                        <PlainButton
+                            className={itemNameCellClass}
+                            onClick={() => onClick(cellValue)}
+                            type="button"
+                            {...dataAttributes}
+                        >
                             {displayName}
                         </PlainButton>
                     </>
                 ) : (
                     <>
                         <FileIcon dimension={32} extension={extension} />
-                        <span className={itemNameCellClass}>{displayName}</span>
+                        <span className={itemNameCellClass} {...dataAttributes}>
+                            {displayName}
+                        </span>
                     </>
                 )}
             </span>

@@ -69,6 +69,38 @@ describe('elements/content-preview/ContentPreview', () => {
 
             expect(instance.loadPreview).toHaveBeenCalledTimes(0);
         });
+
+        test('should destroy preview before attempting to load it', () => {
+            file = { id: '123' };
+
+            const wrapper = getWrapper();
+            const instance = wrapper.instance();
+
+            instance.destroyPreview = jest.fn();
+            instance.shouldLoadPreview = jest.fn().mockReturnValue(true);
+            instance.loadPreview = jest.fn();
+
+            wrapper.setState({ file });
+
+            expect(instance.destroyPreview).toHaveBeenCalledWith(false);
+            expect(instance.loadPreview).toHaveBeenCalledTimes(1);
+        });
+
+        test('should destroy preview and reset selectedVersion state on new fileId', () => {
+            file = { id: '123' };
+
+            const wrapper = getWrapper();
+            const instance = wrapper.instance();
+
+            instance.destroyPreview = jest.fn();
+            instance.fetchFile = jest.fn();
+
+            wrapper.setProps({ fileId: '456' });
+
+            expect(instance.destroyPreview).toHaveBeenCalledWith();
+            expect(wrapper.state('selectedVersion')).toBe(undefined);
+            expect(instance.fetchFile).toHaveBeenCalledWith('456');
+        });
     });
 
     describe('shouldLoadPreview()', () => {
@@ -164,6 +196,47 @@ describe('elements/content-preview/ContentPreview', () => {
         });
     });
 
+    describe('handleCanPrint()', () => {
+        beforeEach(() => {
+            file = {
+                id: '123',
+                permissions: {
+                    can_download: true,
+                },
+                is_download_available: true,
+            };
+        });
+        test.each([
+            [true, true],
+            [false, false],
+        ])('should set canPrint to %s when ability to print is %s', (expected, value) => {
+            const wrapper = getWrapper();
+            const instance = wrapper.instance();
+            const canPrintMock = jest.fn().mockReturnValue(value);
+
+            wrapper.setState({ file });
+            instance.preview = {
+                canPrint: canPrintMock,
+            };
+
+            instance.handleCanPrint();
+
+            expect(canPrintMock).toBeCalled();
+            expect(wrapper.state('canPrint')).toEqual(expected);
+        });
+
+        it('should show print icon if printCheck is not available', () => {
+            const wrapper = getWrapper();
+            const instance = wrapper.instance();
+            instance.preview = {};
+            instance.destroyPreview = jest.fn();
+            wrapper.setState({ file });
+            instance.handleCanPrint();
+
+            expect(wrapper.state('canPrint')).toEqual(true);
+        });
+    });
+
     describe('loadPreview()', () => {
         beforeEach(() => {
             // Fresh global preview object
@@ -177,15 +250,15 @@ describe('elements/content-preview/ContentPreview', () => {
             };
 
             file = { id: '123' };
-        });
-
-        test('should bind onPreviewError prop to preview "preview_error" event', async () => {
             props = {
-                onError: jest.fn(),
+                onMetric: jest.fn(),
                 token: 'token',
                 fileId: file.id,
             };
-            const wrapper = getWrapper(props);
+        });
+
+        test('should bind onPreviewError prop to preview "preview_error" event', async () => {
+            const wrapper = getWrapper({ ...props, onError: jest.fn() });
             wrapper.setState({ file });
             const instance = wrapper.instance();
             instance.onPreviewError = jest.fn();
@@ -194,11 +267,6 @@ describe('elements/content-preview/ContentPreview', () => {
         });
 
         test('should bind onPreviewMetric prop to preview "preview_metric" event', async () => {
-            props = {
-                onMetric: jest.fn(),
-                token: 'token',
-                fileId: file.id,
-            };
             const wrapper = getWrapper(props);
             wrapper.setState({ file });
             const instance = wrapper.instance();
@@ -208,11 +276,6 @@ describe('elements/content-preview/ContentPreview', () => {
         });
 
         test('should bind onPreviewLoad method to preview "load" event', async () => {
-            props = {
-                onMetric: jest.fn(),
-                token: 'token',
-                fileId: file.id,
-            };
             const wrapper = getWrapper(props);
             wrapper.setState({ file });
             const instance = wrapper.instance();
@@ -221,11 +284,6 @@ describe('elements/content-preview/ContentPreview', () => {
         });
 
         test('should call preview show with correct params', async () => {
-            props = {
-                onMetric: jest.fn(),
-                token: 'token',
-                fileId: file.id,
-            };
             const wrapper = getWrapper(props);
             wrapper.setState({ file });
             const instance = wrapper.instance();
@@ -244,14 +302,9 @@ describe('elements/content-preview/ContentPreview', () => {
         });
 
         test('should call preview show with file version params if provided', async () => {
-            props = {
-                onMetric: jest.fn(),
-                token: 'token',
-                fileId: file.id,
-            };
             const wrapper = getWrapper(props);
             wrapper.setState({
-                file,
+                file: { ...file, file_version: { id: '67890' } },
                 selectedVersion: {
                     id: '12345',
                 },
@@ -270,11 +323,107 @@ describe('elements/content-preview/ContentPreview', () => {
                     fileOptions: {
                         [file.id]: {
                             fileVersionId: '12345',
+                            currentFileVersionId: '67890',
                         },
                     },
                 }),
             );
         });
+
+        test('should call preview show with activeAnnotationId if provided', async () => {
+            const wrapper = getWrapper({ ...props, annotatorState: { activeAnnotationId: '123' } });
+            wrapper.setState({ file });
+            const instance = wrapper.instance();
+            await instance.loadPreview();
+            expect(instance.preview.show).toHaveBeenCalledWith(
+                file.id,
+                expect.any(Function),
+                expect.objectContaining({
+                    fileOptions: {
+                        [file.id]: {
+                            annotations: {
+                                activeId: '123',
+                            },
+                        },
+                    },
+                }),
+            );
+        });
+
+        test('should call preview show with startAt params if provided', async () => {
+            const wrapper = getWrapper(props);
+            wrapper.setState({
+                file,
+                startAt: {
+                    unit: 'pages',
+                    value: 3,
+                },
+            });
+            const instance = wrapper.instance();
+            await instance.loadPreview();
+            expect(instance.preview.show).toHaveBeenCalledWith(
+                file.id,
+                expect.any(Function),
+                expect.objectContaining({
+                    container: expect.stringContaining('.bcpr-content'),
+                    header: 'none',
+                    showDownload: false,
+                    skipServerUpdate: true,
+                    useHotkeys: false,
+                    fileOptions: {
+                        [file.id]: {
+                            startAt: {
+                                unit: 'pages',
+                                value: 3,
+                            },
+                        },
+                    },
+                }),
+            );
+        });
+
+        test('should use boxAnnotations instance if provided', async () => {
+            const boxAnnotations = jest.fn();
+            const wrapper = getWrapper({ ...props, boxAnnotations });
+
+            wrapper.setState({ file });
+
+            const instance = wrapper.instance();
+
+            await instance.loadPreview();
+
+            expect(instance.preview.show).toHaveBeenCalledWith(
+                file.id,
+                expect.any(Function),
+                expect.objectContaining({
+                    boxAnnotations,
+                }),
+            );
+        });
+
+        test.each`
+            called   | showAnnotationsControls
+            ${true}  | ${true}
+            ${false} | ${false}
+        `(
+            'should call onAnnotationCreate $called if showAnnotationsControls is $showAnnotationsControls',
+            async ({ called, showAnnotationsControls }) => {
+                const onAnnotator = jest.fn();
+                const wrapper = getWrapper({ ...props, showAnnotationsControls, onAnnotator });
+
+                wrapper.setState({ file });
+
+                const instance = wrapper.instance();
+
+                await instance.loadPreview();
+
+                if (called) {
+                    expect(instance.preview.addListener).toHaveBeenCalledWith('annotator_create', onAnnotator);
+                } else {
+                    expect(instance.preview.addListener).not.toHaveBeenCalledWith('annotator_create', onAnnotator);
+                }
+            },
+        );
     });
 
     describe('fetchFile()', () => {
@@ -565,12 +714,14 @@ describe('elements/content-preview/ContentPreview', () => {
 
         beforeEach(() => {
             props = {
-                token: 'token',
+                collection: [{}, {}],
                 fileId: file.id,
                 onLoad: jest.fn(),
+                token: 'token',
             };
             const wrapper = getWrapper(props);
             instance = wrapper.instance();
+            instance.preview = {};
             instance.focusPreview = jest.fn();
             instance.prefetch = jest.fn();
             instance.getFileIndex = jest.fn().mockReturnValue(0);
@@ -586,6 +737,11 @@ describe('elements/content-preview/ContentPreview', () => {
                     time: totalTimeMetrics,
                 },
             });
+        });
+
+        test('should call prefetch if filesToPrefetch is not empty', () => {
+            instance.onPreviewLoad(data);
+            expect(instance.prefetch).toBeCalled();
         });
     });
 
@@ -1000,5 +1156,44 @@ describe('elements/content-preview/ContentPreview', () => {
             expect(instance.api.destroy).toHaveBeenCalledWith(false);
             expect(instance.destroyPreview).toHaveBeenCalled();
         });
+    });
+
+    describe('handleAnnotationSelect', () => {
+        test.each`
+            annotationFileVersionId | selectedVersionId | locationType | setStateCount
+            ${'123'}                | ${'124'}          | ${'page'}    | ${1}
+            ${'124'}                | ${'124'}          | ${'page'}    | ${0}
+            ${'123'}                | ${'124'}          | ${''}        | ${0}
+            ${undefined}            | ${'124'}          | ${'page'}    | ${0}
+        `(
+            'should call onVersionChange $onVersionChangeCount times and setState $setStateCount times',
+            ({ annotationFileVersionId, selectedVersionId, locationType, setStateCount }) => {
+                const annotation = {
+                    id: '123',
+                    file_version: {
+                        id: annotationFileVersionId,
+                    },
+                    target: {
+                        location: {
+                            type: locationType,
+                        },
+                    },
+                };
+
+                const emit = jest.fn();
+                const wrapper = getWrapper();
+                const instance = wrapper.instance();
+
+                jest.spyOn(instance, 'getViewer').mockReturnValue({ emit });
+
+                wrapper.setState({ selectedVersion: { id: selectedVersionId } });
+                instance.setState = jest.fn();
+
+                instance.handleAnnotationSelect(annotation);
+
+                expect(instance.setState).toHaveBeenCalledTimes(setStateCount);
+                expect(emit).toBeCalledWith('scrolltoannotation', { id: annotation.id, target: annotation.target });
+            },
+        );
     });
 });
